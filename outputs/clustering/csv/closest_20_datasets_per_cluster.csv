@@ -1,0 +1,69 @@
+dataset,cluster,cluster_name,distance_to_centroid,rank_within_cluster
+SemgHandSubjectCh2,0,High-frequency / high-curvature,2.397724650573397,1
+SemgHandGenderCh2,0,High-frequency / high-curvature,2.4038190826165584,2
+SemgHandMovementCh2,0,High-frequency / high-curvature,2.4051607980219516,3
+Earthquakes,0,High-frequency / high-curvature,3.1402580521181758,4
+ShapeletSim,0,High-frequency / high-curvature,4.240624911089296,5
+SmoothSubspace,0,High-frequency / high-curvature,5.700208470463318,6
+ACSF1,0,High-frequency / high-curvature,5.967116495510561,7
+SmallKitchenAppliances,0,High-frequency / high-curvature,10.884609900380676,8
+Symbols,1,Smooth / low-complexity,0.627352615188299,1
+OSULeaf,1,Smooth / low-complexity,0.9149545050464265,2
+Fish,1,Smooth / low-complexity,1.0508892332863113,3
+Trace,1,Smooth / low-complexity,1.0560979258216903,4
+DiatomSizeReduction,1,Smooth / low-complexity,1.1430161141317048,5
+Haptics,1,Smooth / low-complexity,1.1446516386666776,6
+ArrowHead,1,Smooth / low-complexity,1.2165794827666008,7
+GunPointOldVersusYoung,1,Smooth / low-complexity,1.2730301030341364,8
+Worms,1,Smooth / low-complexity,1.3234107895505958,9
+WormsTwoClass,1,Smooth / low-complexity,1.3444030144121564,10
+GunPointMaleVersusFemale,1,Smooth / low-complexity,1.3597726628834703,11
+Herring,1,Smooth / low-complexity,1.3830117879074948,12
+GunPointAgeSpan,1,Smooth / low-complexity,1.4011310162874746,13
+MixedShapesSmallTrain,1,Smooth / low-complexity,1.5144164520731564,14
+Car,1,Smooth / low-complexity,1.5221269587209687,15
+GunPoint,1,Smooth / low-complexity,1.573438506802267,16
+FreezerSmallTrain,1,Smooth / low-complexity,1.5833721045518785,17
+UMD,1,Smooth / low-complexity,1.599731108120135,18
+MixedShapesRegularTrain,1,Smooth / low-complexity,1.609703944274654,19
+FreezerRegularTrain,1,Smooth / low-complexity,1.6111915921151463,20
+MoteStrain,2,Short / moderately rough,1.2393988703249945,1
+PowerCons,2,Short / moderately rough,1.7453814490000172,2
+ECG200,2,Short / moderately rough,1.7760682620046115,3
+DistalPhalanxOutlineCorrect,2,Short / moderately rough,1.7872175247081306,4
+DistalPhalanxTW,2,Short / moderately rough,1.8113706164139944,5
+DistalPhalanxOutlineAgeGroup,2,Short / moderately rough,1.8194771551914346,6
+CricketZ,2,Short / moderately rough,1.8946717998998956,7
+CricketX,2,Short / moderately rough,1.896273411052922,8
+ProximalPhalanxTW,2,Short / moderately rough,1.9277363405242054,9
+ProximalPhalanxOutlineAgeGroup,2,Short / moderately rough,1.9384059125755326,10
+ProximalPhalanxOutlineCorrect,2,Short / moderately rough,1.9390938172920644,11
+MiddlePhalanxOutlineCorrect,2,Short / moderately rough,1.976216613149711,12
+MiddlePhalanxTW,2,Short / moderately rough,1.988045394607594,13
+MiddlePhalanxOutlineAgeGroup,2,Short / moderately rough,1.9988064726475716,14
+PhalangesOutlinesCorrect,2,Short / moderately rough,2.0393544132632773,15
+CricketY,2,Short / moderately rough,2.0590369061731497,16
+SwedishLeaf,2,Short / moderately rough,2.1033323804621675,17
+CBF,2,Short / moderately rough,2.1509604189329434,18
+SonyAIBORobotSurface1,2,Short / moderately rough,2.180848927177656,19
+Plane,2,Short / moderately rough,2.220699051669742,20
+WordSynonyms,3,Spiky / multi-class,1.5291924372232815,1
+ScreenType,3,Spiky / multi-class,1.6592360076675854,2
+GestureMidAirD3,3,Spiky / multi-class,1.6693198184146358,3
+GestureMidAirD2,3,Spiky / multi-class,1.7262557422462734,4
+ToeSegmentation1,3,Spiky / multi-class,1.8311506512795221,5
+ToeSegmentation2,3,Spiky / multi-class,1.8688360618057387,6
+EOGVerticalSignal,3,Spiky / multi-class,1.95745749457322,7
+Computers,3,Spiky / multi-class,2.0187650618414685,8
+Ham,3,Spiky / multi-class,2.0833169069004582,9
+EOGHorizontalSignal,3,Spiky / multi-class,2.0901629617342152,10
+GestureMidAirD1,3,Spiky / multi-class,2.1076367942826453,11
+InsectWingbeatSound,3,Spiky / multi-class,2.201693294168619,12
+Wine,3,Spiky / multi-class,2.209547750111182,13
+MedicalImages,3,Spiky / multi-class,2.2934625920739493,14
+OliveOil,3,Spiky / multi-class,2.435832983606238,15
+PickupGestureWiimoteZ,3,Spiky / multi-class,2.4650649385896752,16
+Strawberry,3,Spiky / multi-class,2.478031520167306,17
+Meat,3,Spiky / multi-class,2.513916334930723,18
+InlineSkate,3,Spiky / multi-class,2.518129170787405,19
+CinCECGTorso,3,Spiky / multi-class,2.5191445124417613,20

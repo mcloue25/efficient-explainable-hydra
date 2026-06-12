@@ -53,37 +53,26 @@ class ClusterAnalysis:
     def feature_profile(self, feature_cols=FEATURE_COLS):
         profile = self.clustered_df.groupby("cluster")[list(feature_cols)].mean()
 
-        profile_z = (
-            profile - self.dataset_features[list(feature_cols)].mean()
-        ) / self.dataset_features[list(feature_cols)].std()
-
-        profile_z.round(3).to_csv(
-            self.csv_output_path / f"cluster_feature_profiles_k{self.n_clusters}.csv"
-        )
-
+        profile_z = (profile - self.dataset_features[list(feature_cols)].mean()) / self.dataset_features[list(feature_cols)].std()
+        profile_z.round(3).to_csv(self.csv_output_path / f"cluster_feature_profiles_k{self.n_clusters}.csv")
         return profile_z
+
+
 
     def report_feature_profile(self, feature_cols=PROFILE_FEATURE_COLS):
         profile = self.clustered_df.groupby("cluster")[list(feature_cols)].mean()
 
-        profile_z = (
-            profile - self.clustered_df[list(feature_cols)].mean()
-        ) / self.clustered_df[list(feature_cols)].std()
-
-        profile_z.round(3).to_csv(
-            self.csv_output_path / f"report_feature_profile_k{self.n_clusters}.csv"
-        )
-
+        profile_z = (profile - self.clustered_df[list(feature_cols)].mean()) / self.clustered_df[list(feature_cols)].std()
+        profile_z.round(3).to_csv(self.csv_output_path / f"report_feature_profile_k{self.n_clusters}.csv")
         return profile_z
+
+
 
     def kruskal_tests(self, feature_cols=REPORT_FEATURE_COLS):
         rows = []
 
         for col in feature_cols:
-            groups = [
-                self.clustered_df.loc[self.clustered_df["cluster"] == c, col].dropna()
-                for c in sorted(self.clustered_df["cluster"].unique())
-            ]
+            groups = [self.clustered_df.loc[self.clustered_df["cluster"] == c, col].dropna() for c in sorted(self.clustered_df["cluster"].unique())]
 
             stat, p_value = kruskal(*groups)
 
@@ -94,13 +83,10 @@ class ClusterAnalysis:
             })
 
         tests = pd.DataFrame(rows).sort_values("p_value")
-
-        tests.to_csv(
-            self.csv_output_path / "cluster_feature_tests.csv",
-            index=False,
-        )
-
+        tests.to_csv(self.csv_output_path / "cluster_feature_tests.csv", index=False)
         return tests
+
+
 
     def evaluate_k_range(self, k_values=range(3, 20)):
         rows = []
@@ -121,13 +107,10 @@ class ClusterAnalysis:
             })
 
         k_eval = pd.DataFrame(rows)
-
-        k_eval.to_csv(
-            self.csv_output_path / f"cluster_count_sensitivity_k{min(k_values)}_to_k{max(k_values)}.csv",
-            index=False,
-        )
-
+        k_eval.to_csv(self.csv_output_path / f"cluster_count_sensitivity_k{min(k_values)}_to_k{max(k_values)}.csv", index=False)
         return k_eval
+
+
 
     def attach_ucr_types(self, ucr_types):
         type_df = ucr_types.copy()
@@ -142,21 +125,15 @@ class ClusterAnalysis:
             how="left",
         ).rename(columns={"Type": "ucr_type"})
 
-        merged.to_csv(
-            self.csv_output_path / f"ucr_dataset_clusters_k{self.n_clusters}_with_types.csv",
-            index=False,
-        )
-
+        merged.to_csv(self.csv_output_path / f"ucr_dataset_clusters_k{self.n_clusters}_with_types.csv", index=False)
         return merged
+
 
     def compare_to_ucr_types(self, ucr_types):
         merged = self.attach_ucr_types(ucr_types)
         valid = merged.dropna(subset=["ucr_type"])
 
-        homogeneity, completeness, v_measure = homogeneity_completeness_v_measure(
-            valid["ucr_type"],
-            valid["cluster"],
-        )
+        homogeneity, completeness, v_measure = homogeneity_completeness_v_measure(valid["ucr_type"], valid["cluster"])
 
         metrics = pd.DataFrame([
             {
@@ -170,36 +147,26 @@ class ClusterAnalysis:
             }
         ])
 
-        metrics.to_csv(
-            self.csv_output_path / "external_ucr_type_metrics.csv",
-            index=False,
-        )
-
+        metrics.to_csv(self.csv_output_path / "external_ucr_type_metrics.csv", index=False)
         return metrics
+
+
 
     def type_contingency(self, ucr_types):
         merged = self.attach_ucr_types(ucr_types)
 
-        contingency = pd.crosstab(
-            merged["cluster"],
-            merged["ucr_type"],
-            dropna=False,
-        )
-
+        contingency = pd.crosstab(merged["cluster"], merged["ucr_type"], dropna=False)
         contingency_norm = contingency.div(contingency.sum(axis=1), axis=0)
 
-        contingency.to_csv(
-            self.csv_output_path / "cluster_type_contingency.csv"
-        )
+        contingency.to_csv(self.csv_output_path / "cluster_type_contingency.csv")
 
-        contingency_norm.to_csv(
-            self.csv_output_path / "cluster_type_contingency_normalised.csv"
-        )
-
+        contingency_norm.to_csv(self.csv_output_path / "cluster_type_contingency_normalised.csv")
         return {
             "contingency": contingency,
             "contingency_norm": contingency_norm,
         }
+
+
 
     def type_summary(self, ucr_types):
         merged = self.attach_ucr_types(ucr_types)
@@ -223,12 +190,10 @@ class ClusterAnalysis:
 
         summary = pd.DataFrame(rows).sort_values("cluster")
 
-        summary.to_csv(
-            self.csv_output_path / "cluster_type_summary.csv",
-            index=False,
-        )
-
+        summary.to_csv(self.csv_output_path / "cluster_type_summary.csv", index=False)
         return summary
+
+
 
     def closest_datasets_to_centroids(self, top_n=20):
         rows = []
@@ -240,10 +205,7 @@ class ClusterAnalysis:
 
             centroid = cluster_features.mean(axis=0, keepdims=True)
 
-            _, distances = pairwise_distances_argmin_min(
-                cluster_features,
-                centroid,
-            )
+            _, distances = pairwise_distances_argmin_min(cluster_features, centroid)
 
             ranked = (
                 self.clustered_df.loc[
@@ -260,13 +222,10 @@ class ClusterAnalysis:
             rows.append(ranked)
 
         closest = pd.concat(rows, ignore_index=True)
-
-        closest.to_csv(
-            self.csv_output_path / f"closest_{top_n}_datasets_per_cluster.csv",
-            index=False,
-        )
-
+        closest.to_csv(self.csv_output_path / f"closest_{top_n}_datasets_per_cluster.csv", index=False)
         return closest
+    
+
 
     def plot_feature_profile(self, profile_z=None):
         if profile_z is None:
@@ -298,13 +257,10 @@ class ClusterAnalysis:
 
         fig.tight_layout()
 
-        fig.savefig(
-            self.img_output_path / f"cluster_feature_profiles_k{self.n_clusters}.png",
-            dpi=300,
-            bbox_inches="tight",
-        )
-
+        fig.savefig(self.img_output_path / f"cluster_feature_profiles_k{self.n_clusters}.png", dpi=300, bbox_inches="tight")
         plt.close(fig)
+
+
 
     def plot_pca_clusters(self):
         fig, ax = plt.subplots(figsize=(8, 5))
@@ -334,13 +290,10 @@ class ClusterAnalysis:
 
         fig.tight_layout()
 
-        fig.savefig(
-            self.img_output_path / f"signal_morphology_clusters_k{self.n_clusters}.png",
-            dpi=300,
-            bbox_inches="tight",
-        )
-
+        fig.savefig(self.img_output_path / f"signal_morphology_clusters_k{self.n_clusters}.png", dpi=300, bbox_inches="tight")
         plt.close(fig)
+
+
 
     def plot_k_diagnostics(self, k_eval=None):
         if k_eval is None:
@@ -356,18 +309,8 @@ class ClusterAnalysis:
         axes[1].set_title("Davies-Bouldin")
         axes[1].set_xlabel("k")
 
-        axes[2].plot(
-            k_eval["k"],
-            k_eval["min_cluster_size"],
-            marker="o",
-            label="Min cluster size",
-        )
-        axes[2].plot(
-            k_eval["k"],
-            k_eval["n_singletons"],
-            marker="o",
-            label="Singleton clusters",
-        )
+        axes[2].plot(k_eval["k"], k_eval["min_cluster_size"], marker="o", label="Min cluster size")
+        axes[2].plot(k_eval["k"], k_eval["n_singletons"], marker="o", label="Singleton clusters")
         axes[2].set_title("Cluster size diagnostics")
         axes[2].set_xlabel("k")
         axes[2].legend()
@@ -377,13 +320,10 @@ class ClusterAnalysis:
 
         fig.tight_layout()
 
-        fig.savefig(
-            self.img_output_path / "cluster_count_sensitivity.png",
-            dpi=300,
-            bbox_inches="tight",
-        )
-
+        fig.savefig(self.img_output_path / "cluster_count_sensitivity.png", dpi=300, bbox_inches="tight")
         plt.close(fig)
+
+
 
     def run(self):
         # Build summary tables.

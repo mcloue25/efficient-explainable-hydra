@@ -12,6 +12,7 @@ from utils.data_utils import load_dataset
 from utils.explainability import apply_mask, select_contiguous_window
 
 
+# HYDRA saliency variants compared in the ablation study.
 ABLATION_VARIANTS = (
     "max_only",
     "min_only",
@@ -19,6 +20,7 @@ ABLATION_VARIANTS = (
     "combined",
 )
 
+# Human-readable names used in summary tables.
 VARIANT_LABELS = {
     "max_only": "Max-only",
     "min_only": "Min-only",
@@ -26,6 +28,7 @@ VARIANT_LABELS = {
     "combined": "Combined",
 }
 
+# Stable ordering for report/table output.
 VARIANT_ORDER = {
     "max_only": 0,
     "min_only": 1,
@@ -38,6 +41,8 @@ EPS = 1e-6
 
 @dataclass
 class HydraSaliencyAblation:
+    '''Run perturbation tests for different HYDRA saliency constructions
+    '''
     datasets: list[str]
     output_dir: Path | str = Path("outputs/saliency/ablation")
     variants: tuple[str, ...] = ABLATION_VARIANTS
@@ -46,18 +51,27 @@ class HydraSaliencyAblation:
     seed: int = 42
     device: str | torch.device | None = None
 
+
     def __post_init__(self):
+        '''Prepare output directory and compute device
+        '''
         self.output_dir = Path(self.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Use GPU when available unless a device is explicitly provided.
         if self.device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         elif not isinstance(self.device, torch.device):
             self.device = torch.device(self.device)
 
+
+
     def run_dataset(self, dataset):
+        '''Run all saliency variants for one dataset and cache the result CSV
+        '''
         out_path = self.output_dir / f"hydra_saliency_ablation_{dataset}.csv"
 
+        # Reuse existing per-dataset output to make interrupted runs resumable.
         if out_path.exists():
             print(f"[SKIP] Loading existing ablation results for {dataset}")
             return pd.read_csv(out_path)
@@ -66,16 +80,13 @@ class HydraSaliencyAblation:
 
         X_train, y_train, X_test, y_test, _ = load_dataset(dataset)
 
-        model = HydraModelExplainable(
-            input_dim=X_train.shape[-1],
-            seed=self.seed,
-            device=self.device,
-        )
+        model = HydraModelExplainable(input_dim=X_train.shape[-1], seed=self.seed, device=self.device)
         model.fit(X_train, y_train)
 
         if not hasattr(model.transform, "get_saliency_map_fast"):
             raise AttributeError("get_saliency_map_fast is not available on model.transform")
 
+        # Evaluate only correctly classified samples so perturbation starts from a valid prediction.
         preds = model.predict(X_test)
         correct_indices = np.where(preds == y_test)[0]
 
@@ -96,6 +107,7 @@ class HydraSaliencyAblation:
             score_before = get_predicted_class_score(model, x[None, :], pred_before)
 
             for variant in self.variants:
+                # Compute the requested HYDRA saliency construction.
                 saliency = np.asarray(
                     model.transform.get_saliency_map_fast(
                         x_t,
@@ -107,28 +119,17 @@ class HydraSaliencyAblation:
                     dtype=np.float32,
                 )
 
+                # Mask the most salient contiguous window for this variant.
                 importance = np.abs(saliency)
-                mask = select_contiguous_window(
-                    importance,
-                    fraction=self.fraction,
-                    mode="top",
-                )
-
+                mask = select_contiguous_window(importance, fraction=self.fraction, mode="top")
                 x_masked = apply_mask(x, mask)
 
-                score_after = get_predicted_class_score(
-                    model,
-                    x_masked[None, :],
-                    pred_before,
-                )
+                # Measure how much the original predicted-class score drops after masking.
+                score_after = get_predicted_class_score(model, x_masked[None, :], pred_before)
                 pred_after = int(model.predict(x_masked[None, :])[0])
 
                 score_drop = score_before - score_after
-                bounded_relative_score_drop = np.clip(
-                    score_drop / (abs(score_before) + EPS),
-                    -1.0,
-                    1.0,
-                )
+                bounded_relative_score_drop = np.clip(score_drop / (abs(score_before) + EPS), -1.0, 1.0)
 
                 rows.append({
                     "dataset": dataset,
@@ -150,6 +151,7 @@ class HydraSaliencyAblation:
         df = pd.DataFrame(rows)
         df.to_csv(out_path, index=False)
 
+        # Release model/data memory before moving to the next dataset.
         del model, X_train, y_train, X_test, y_test
         gc.collect()
         if torch.cuda.is_available():
@@ -158,6 +160,8 @@ class HydraSaliencyAblation:
         return df
 
     def run(self):
+        '''Run the ablation across all datasets and write sample/summary CSVs
+        '''
         frames = []
 
         for i, dataset in enumerate(self.datasets, start=1):
@@ -181,6 +185,8 @@ class HydraSaliencyAblation:
         }
 
     def summarise(self, samples=None):
+        '''Aggregate per-sample ablation results into variant-level metrics
+        '''
         if samples is None:
             samples_path = self.output_dir / "hydra_saliency_ablation_samples.csv"
             samples = pd.read_csv(samples_path)

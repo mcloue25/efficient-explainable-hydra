@@ -6,28 +6,36 @@ import pandas as pd
 from scipy.stats import kruskal, wilcoxon
 
 
+# Stable ordering used in report tables.
 MODEL_ORDER = ["HYDRA", "LR", "MrSQM"]
 MODE_ORDER = ["top", "random", "bottom"]
 
 
 @dataclass
 class SaliencyResultsAnalysis:
+    '''Aggregate and analyse saliency masking outputs across models/datasets
+    '''
+
     saliency_output_dir: Path | str
     output_dir: Path | str = Path("outputs/saliency/analysis")
     cluster_csv_path: Path | str | None = None
 
     def __post_init__(self):
+        '''Prepare paths and initialise result containers
+        '''
         self.saliency_output_dir = Path(self.saliency_output_dir)
         self.output_dir = Path(self.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-
         self.cluster_csv_path = Path(self.cluster_csv_path) if self.cluster_csv_path else None
-
         self.samples = None
         self.summary = None
         self.clustered_summary = None
 
+
+
     def load_results(self):
+        '''Load and combine per-model sample/summary CSV files
+        '''
         sample_files = sorted(self.saliency_output_dir.glob("*_samples.csv"))
         summary_files = sorted(self.saliency_output_dir.glob("*_summary.csv"))
 
@@ -37,25 +45,21 @@ class SaliencyResultsAnalysis:
         if not summary_files:
             raise FileNotFoundError(f"No summary files found in {self.saliency_output_dir}")
 
-        self.samples = pd.concat(
-            [pd.read_csv(path) for path in sample_files],
-            ignore_index=True,
-        )
+        self.samples = pd.concat([pd.read_csv(path) for path in sample_files], ignore_index=True)
+        self.summary = pd.concat([pd.read_csv(path) for path in summary_files], ignore_index=True)
 
-        self.summary = pd.concat(
-            [pd.read_csv(path) for path in summary_files],
-            ignore_index=True,
-        )
-
+        # Add bounded score-drop columns when loading older result files.
         self.samples = self._ensure_bounded_score_drop(self.samples)
         self.summary = self._ensure_summary_bounded_score_drop(self.summary)
-
         self.samples.to_csv(self.output_dir / "combined_saliency_samples.csv", index=False)
         self.summary.to_csv(self.output_dir / "combined_saliency_summary.csv", index=False)
-
         return self.samples, self.summary
 
+
+
     def _ensure_bounded_score_drop(self, df, eps=1e-6):
+        '''Compute bounded relative score drop if it is missing
+        '''
         df = df.copy()
 
         if "bounded_relative_score_drop" not in df.columns:
@@ -67,7 +71,11 @@ class SaliencyResultsAnalysis:
 
         return df
 
+
+
     def _ensure_summary_bounded_score_drop(self, df):
+        '''Add mean bounded score-drop to summary rows if absent
+        '''
         df = df.copy()
 
         if "mean_bounded_relative_score_drop" not in df.columns:
@@ -84,16 +92,13 @@ class SaliencyResultsAnalysis:
                     )
                 )
             )
-
-            df = df.merge(
-                bounded_summary,
-                on=["dataset", "model", "fraction", "mode"],
-                how="left",
-            )
+            df = df.merge(bounded_summary, on=["dataset", "model", "fraction", "mode"], how="left")
 
         return df
 
     def add_clusters(self):
+        ''' Attach signal-morphology cluster labels to the saliency summary
+        '''
         if self.cluster_csv_path is None:
             return None
 
@@ -106,20 +111,15 @@ class SaliencyResultsAnalysis:
         if "cluster_name" in clusters.columns:
             keep_cols.append("cluster_name")
 
-        self.clustered_summary = self.summary.merge(
-            clusters[keep_cols],
-            on="dataset",
-            how="left",
-        )
-
-        self.clustered_summary.to_csv(
-            self.output_dir / "combined_saliency_summary_with_clusters.csv",
-            index=False,
-        )
-
+        self.clustered_summary = self.summary.merge(clusters[keep_cols], on="dataset", how="left")
+        self.clustered_summary.to_csv(self.output_dir / "combined_saliency_summary_with_clusters.csv", index=False)
         return self.clustered_summary
 
+
+
     def table_at_fraction(self, metric, fraction=0.10, as_percent=False, filename=None):
+        '''Create a model-by-masking-mode table for one metric and masking fraction
+        '''
         if self.summary is None:
             self.load_results()
 
@@ -139,7 +139,11 @@ class SaliencyResultsAnalysis:
 
         return table
 
+
+
     def flip_rate_table(self, fraction=0.10):
+        '''Generate the 10% masking prediction flip-rate table
+        '''
         return self.table_at_fraction(
             metric="flip_rate",
             fraction=fraction,
@@ -147,7 +151,11 @@ class SaliencyResultsAnalysis:
             filename=f"flip_rate_{int(fraction * 100)}.csv",
         )
 
+
+
     def bounded_score_drop_table(self, fraction=0.10):
+        '''Generate the bounded relative score-drop table
+        '''
         return self.table_at_fraction(
             metric="mean_bounded_relative_score_drop",
             fraction=fraction,
@@ -155,28 +163,21 @@ class SaliencyResultsAnalysis:
             filename=f"bounded_relative_score_drop_{int(fraction * 100)}.csv",
         )
 
+
+
     def paired_tests(self, model="HYDRA", fraction=0.10):
+        '''Run paired Wilcoxon tests comparing top masking with baselines
+        '''
         if self.summary is None:
             self.load_results()
 
         rows = []
-
-        tests = [
-            ("flip_rate", "Flip rate"),
-            ("mean_bounded_relative_score_drop", "Bounded score drop"),
-        ]
-
-        comparisons = [
-            ("random", "Top > Random"),
-            ("bottom", "Top > Bottom"),
-        ]
-
-        data = self.summary[
-            (self.summary["model"] == model)
-            & (self.summary["fraction"] == fraction)
-        ]
+        tests = [("flip_rate", "Flip rate"), ("mean_bounded_relative_score_drop", "Bounded score drop")]
+        comparisons = [("random", "Top > Random"), ("bottom", "Top > Bottom")]
+        data = self.summary[(self.summary["model"] == model) & (self.summary["fraction"] == fraction)]
 
         for metric_col, metric_name in tests:
+            # Pivot to dataset-level paired observations.
             pivot = data.pivot_table(
                 index="dataset",
                 columns="mode",
@@ -188,6 +189,7 @@ class SaliencyResultsAnalysis:
                 valid = pivot.dropna(subset=[baseline_mode])
                 diff = valid["top"] - valid[baseline_mode]
 
+                # Wilcoxon ignores tied zero-difference pairs.
                 non_tied = diff[diff != 0]
 
                 if len(non_tied) == 0:
@@ -195,11 +197,7 @@ class SaliencyResultsAnalysis:
                     top_greater = 0
                     total = 0
                 else:
-                    _, p_value = wilcoxon(
-                        non_tied,
-                        alternative="greater",
-                        zero_method="wilcox",
-                    )
+                    _, p_value = wilcoxon(non_tied, alternative="greater", zero_method="wilcox")
                     top_greater = int((non_tied > 0).sum())
                     total = int(len(non_tied))
 
@@ -216,20 +214,16 @@ class SaliencyResultsAnalysis:
                 })
 
         tests_df = pd.DataFrame(rows)
-
-        tests_df.to_csv(
-            self.output_dir / f"{model.lower()}_paired_tests_{int(fraction * 100)}.csv",
-            index=False,
-        )
-
+        tests_df.to_csv(self.output_dir / f"{model.lower()}_paired_tests_{int(fraction * 100)}.csv", index=False)
         return tests_df
 
     def dataset_consistency(self, fraction=0.10, metric="mean_score_drop"):
+        '''Measure how often top masking is more disruptive per dataset
+        '''
         if self.summary is None:
             self.load_results()
 
         rows = []
-
         data = self.summary[self.summary["fraction"] == fraction]
 
         for model, group in data.groupby("model"):
@@ -247,35 +241,25 @@ class SaliencyResultsAnalysis:
                 "model": model,
                 "fraction": fraction,
                 "metric": metric,
-                "top_greater_random_percent": float(
-                    (valid_random["top"] > valid_random["random"]).mean() * 100
-                ),
-                "top_greater_bottom_percent": float(
-                    (valid_bottom["top"] > valid_bottom["bottom"]).mean() * 100
-                ),
+                "top_greater_random_percent": float((valid_random["top"] > valid_random["random"]).mean() * 100),
+                "top_greater_bottom_percent": float((valid_bottom["top"] > valid_bottom["bottom"]).mean() * 100),
                 "n_random": int(len(valid_random)),
                 "n_bottom": int(len(valid_bottom)),
             })
 
         consistency = pd.DataFrame(rows)
-
-        consistency.to_csv(
-            self.output_dir / f"dataset_consistency_{int(fraction * 100)}.csv",
-            index=False,
-        )
-
+        consistency.to_csv(self.output_dir / f"dataset_consistency_{int(fraction * 100)}.csv", index=False)
         return consistency
 
+
+
     def nonflip_score_effect(self, model="HYDRA", fraction=0.10):
+        '''Check whether top masking reduces score even when prediction does not flip
+        '''
         if self.samples is None:
             self.load_results()
 
-        data = self.samples[
-            (self.samples["model"] == model)
-            & (self.samples["fraction"] == fraction)
-            & (self.samples["mode"] == "top")
-        ].copy()
-
+        data = self.samples[(self.samples["model"] == model) & (self.samples["fraction"] == fraction) & (self.samples["mode"] == "top")].copy()
         data["group"] = np.where(data["flipped"].astype(float) > 0, "Flipped", "Not flipped")
         data["positive_drop"] = data["score_drop"] > 0
 
@@ -290,26 +274,22 @@ class SaliencyResultsAnalysis:
         order = pd.CategoricalDtype(["Flipped", "Not flipped"], ordered=True)
         table["group"] = table["group"].astype(order)
         table = table.sort_values("group")
-
-        table.to_csv(
-            self.output_dir / f"{model.lower()}_nonflip_score_effect_{int(fraction * 100)}.csv",
-            index=False,
-        )
+        table.to_csv(self.output_dir / f"{model.lower()}_nonflip_score_effect_{int(fraction * 100)}.csv", index=False)
 
         return table
 
+
+
     def cluster_gap_table(self, model="HYDRA", fraction=0.10):
+        '''Compute top-minus-random perturbation gaps within each cluster
+        '''
         if self.clustered_summary is None:
             self.add_clusters()
 
         if self.clustered_summary is None:
             raise ValueError("cluster_csv_path is required for cluster gap analysis.")
 
-        data = self.clustered_summary[
-            (self.clustered_summary["model"] == model)
-            & (self.clustered_summary["fraction"] == fraction)
-        ]
-
+        data = self.clustered_summary[(self.clustered_summary["model"] == model) & (self.clustered_summary["fraction"] == fraction)]
         rows = []
 
         cluster_cols = ["cluster"]
@@ -326,33 +306,25 @@ class SaliencyResultsAnalysis:
                 values=["flip_rate", "mean_score_drop"],
                 aggfunc="mean",
             )
-
             row = {
                 "cluster": cluster_values[0],
-                "flip_rate_gap": float(
-                    (pivot[("flip_rate", "top")] - pivot[("flip_rate", "random")]).mean()
-                ),
-                "score_drop_gap": float(
-                    (pivot[("mean_score_drop", "top")] - pivot[("mean_score_drop", "random")]).mean()
-                ),
+                "flip_rate_gap": float((pivot[("flip_rate", "top")] - pivot[("flip_rate", "random")]).mean()),
+                "score_drop_gap": float((pivot[("mean_score_drop", "top")] - pivot[("mean_score_drop", "random")]).mean()),
                 "n_datasets": int(group["dataset"].nunique()),
             }
-
             if len(cluster_values) > 1:
                 row["cluster_name"] = cluster_values[1]
-
             rows.append(row)
 
         gap_table = pd.DataFrame(rows).sort_values("cluster")
-
-        gap_table.to_csv(
-            self.output_dir / f"{model.lower()}_cluster_gap_{int(fraction * 100)}.csv",
-            index=False,
-        )
-
+        gap_table.to_csv(self.output_dir / f"{model.lower()}_cluster_gap_{int(fraction * 100)}.csv", index=False)
         return gap_table
+    
+
 
     def within_cluster_tests(self, model="HYDRA", fraction=0.10):
+        '''Run paired Wilcoxon tests separately inside each cluster
+        '''
         if self.clustered_summary is None:
             self.add_clusters()
 
@@ -360,23 +332,10 @@ class SaliencyResultsAnalysis:
             raise ValueError("cluster_csv_path is required for within-cluster tests.")
 
         rows = []
+        data = self.clustered_summary[(self.clustered_summary["model"] == model) & (self.clustered_summary["fraction"] == fraction)]
 
-        data = self.clustered_summary[
-            (self.clustered_summary["model"] == model)
-            & (self.clustered_summary["fraction"] == fraction)
-        ]
-
-        metrics = [
-            ("flip_rate", "Flip rate"),
-            ("mean_score_drop", "Score drop"),
-            ("mean_bounded_relative_score_drop", "Bounded score drop"),
-        ]
-
-        comparisons = [
-            ("random", "Top > Random"),
-            ("bottom", "Top > Bottom"),
-        ]
-
+        metrics = [("flip_rate", "Flip rate"), ("mean_score_drop", "Score drop"), ("mean_bounded_relative_score_drop", "Bounded score drop")]
+        comparisons = [("random", "Top > Random"), ("bottom", "Top > Bottom")]
         for cluster, cluster_group in data.groupby("cluster"):
             cluster_name = (
                 cluster_group["cluster_name"].iloc[0]
@@ -433,6 +392,8 @@ class SaliencyResultsAnalysis:
         return tests
 
     def kruskal_cluster_gap_tests(self, model="HYDRA", fraction=0.10):
+        '''Test whether top-minus-random gaps differ across clusters
+        '''
         if self.clustered_summary is None:
             self.add_clusters()
 
@@ -460,6 +421,7 @@ class SaliencyResultsAnalysis:
         ]
 
         for metric_col, gap_name in gap_defs:
+            # Convert per-mode values into a per-dataset top-minus-random gap.
             pivot[gap_name] = pivot[(metric_col, "top")] - pivot[(metric_col, "random")]
 
             groups = [
@@ -489,8 +451,11 @@ class SaliencyResultsAnalysis:
         return tests
 
     def run(self, fraction=0.10):
+        '''Run the complete saliency analysis workflow
+        '''
         self.load_results()
 
+        # Core report tables.
         flip_table = self.flip_rate_table(fraction=fraction)
         bounded_table = self.bounded_score_drop_table(fraction=fraction)
         paired_tests = self.paired_tests(model="HYDRA", fraction=fraction)
@@ -507,6 +472,7 @@ class SaliencyResultsAnalysis:
             "nonflip_score_effect": nonflip_effect,
         }
 
+        # Optional cluster-aware analysis if cluster assignments are provided.
         if self.cluster_csv_path is not None:
             self.add_clusters()
 

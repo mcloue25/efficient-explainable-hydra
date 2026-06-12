@@ -13,6 +13,7 @@ from utils.data_utils import load_dataset
 from utils.explainability import apply_mask, select_contiguous_window
 
 
+# Human-readable cluster names used in cluster-level WindowSHAP summaries.
 CLUSTER_NAMES = {
     0: "High-frequency / high-curvature",
     1: "Smooth / low-complexity",
@@ -22,17 +23,23 @@ CLUSTER_NAMES = {
 
 
 def pred_to_hydra_class_index(model, pred_label):
+    '''Map the predicted label to the classifier coefficient index used by HYDRA
+    '''
     if len(model.classifier.classes_) > 2:
         return int(np.where(model.classifier.classes_ == pred_label)[0][0])
     return 0
 
 
+
 def get_predicted_class_score(model, X, pred_label):
+    '''Return the decision score for the originally predicted class
+    '''
     decision = np.asarray(model.decision_function(X))
 
     if decision.ndim == 0:
         return float(decision)
 
+    # Binary classifiers often return one signed margin.
     if decision.ndim == 1:
         margin = float(decision[0])
         return margin if pred_label == 1 else -margin
@@ -46,20 +53,29 @@ def get_predicted_class_score(model, X, pred_label):
     return float(decision[0, class_index])
 
 
+
 def mask_to_start(mask):
+    '''Return the first selected time index in a boolean mask
+    '''
     idx = np.where(mask)[0]
     if len(idx) == 0:
         return None
     return int(idx[0])
 
 
+
 def window_to_mask(start, length, series_length):
+    '''Convert a contiguous window start/length into a boolean mask
+    '''
     mask = np.zeros(series_length, dtype=bool)
     mask[start:start + length] = True
     return mask
 
 
+
 def compare_masks(mask_a, mask_b):
+    '''Compare two selected windows using overlap and centre-distance metrics
+    '''
     mask_a = np.asarray(mask_a, dtype=bool)
     mask_b = np.asarray(mask_b, dtype=bool)
 
@@ -89,10 +105,14 @@ def compare_masks(mask_a, mask_b):
 
 @dataclass
 class WindowSHAPExplainer:
+    '''Segment-based KernelSHAP explainer for one-dimensional time series
+    '''
     n_segments: int = 100
     nsamples: int = 500
 
     def __post_init__(self):
+        '''Import SHAP lazily so the dependency is checked only when needed
+        '''
         try:
             import shap
         except ImportError as exc:
@@ -100,17 +120,20 @@ class WindowSHAPExplainer:
 
         self.shap = shap
 
+
+
     def segment_bounds(self, series_length):
+        '''Split a time series into approximately equal non-empty segments
+        '''
         edges = np.linspace(0, series_length, self.n_segments + 1).round().astype(int)
-        return [
-            (int(edges[i]), int(edges[i + 1]))
-            for i in range(self.n_segments)
-            if edges[i + 1] > edges[i]
-        ]
+        return [(int(edges[i]), int(edges[i + 1])) for i in range(self.n_segments) if edges[i + 1] > edges[i]]
+
+
 
     def apply_segment_coalition(self, x, coalition, bounds, fill_value=None):
+        '''Apply a SHAP coalition by replacing hidden segments with a baseline value
+        '''
         x_masked = np.asarray(x, dtype=np.float32).copy()
-
         if fill_value is None:
             fill_value = float(np.mean(x_masked))
 
@@ -120,7 +143,10 @@ class WindowSHAPExplainer:
 
         return x_masked
 
+
+
     def expand_segment_values(self, segment_values, bounds, series_length):
+        '''Expand segment-level SHAP values back to time-step resolution'''
         out = np.zeros(series_length, dtype=np.float32)
 
         for value, (start, end) in zip(segment_values, bounds):
@@ -129,16 +155,21 @@ class WindowSHAPExplainer:
         return out
 
     def explain(self, model, x, pred_label):
+        '''Compute absolute WindowSHAP saliency for a single test series'''
         x = np.asarray(x, dtype=np.float32)
         series_length = len(x)
         bounds = self.segment_bounds(series_length)
         n_segments_actual = len(bounds)
 
+        # KernelSHAP sees an all-hidden baseline and an all-visible instance.
         background = np.zeros((1, n_segments_actual), dtype=np.float32)
         instance = np.ones((1, n_segments_actual), dtype=np.float32)
         fill_value = float(np.mean(x))
 
+
         def predict_from_coalitions(coalitions):
+            '''Map SHAP coalitions to model decision scores
+            '''
             coalitions = np.asarray(coalitions, dtype=np.float32)
 
             X_masked = np.stack([
@@ -177,6 +208,9 @@ class WindowSHAPExplainer:
 
 @dataclass
 class WindowSHAPComparison:
+    '''Compare HYDRA projection saliency against WindowSHAP
+    '''
+
     datasets: list[str]
     output_dir: Path | str = Path("outputs/saliency/windowshap")
     fractions: tuple[float, ...] = (0.05, 0.10, 0.20)
@@ -187,6 +221,7 @@ class WindowSHAPComparison:
     device: str | torch.device | None = None
 
     def __post_init__(self):
+        '''Prepare output directory, compute device, and SHAP explainer'''
         self.output_dir = Path(self.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -201,6 +236,7 @@ class WindowSHAPComparison:
         )
 
     def hydra_importance(self, model, x, pred_label):
+        '''Compute HYDRA saliency for the predicted class'''
         class_index = pred_to_hydra_class_index(model, pred_label)
         x_t = model._to_tensor(x[None, :])
 
@@ -217,14 +253,17 @@ class WindowSHAPComparison:
         return np.abs(saliency)
 
     def compare_sample(self, model, x, y_true):
+        '''Compare HYDRA and WindowSHAP masks for one correctly classified sample'''
         x = np.asarray(x, dtype=np.float32)
 
         pred_before = int(model.predict(x[None, :])[0])
 
+        # Time HYDRA saliency computation.
         t0 = time.perf_counter()
         hydra_importance = self.hydra_importance(model, x, pred_before)
         hydra_explain_time = time.perf_counter() - t0
 
+        # Time WindowSHAP explanation computation.
         t0 = time.perf_counter()
         shap_importance = self.explainer.explain(
             model=model,
@@ -238,6 +277,7 @@ class WindowSHAPComparison:
         rows = []
 
         for fraction in self.fractions:
+            # Select the most salient contiguous window for both methods.
             hydra_mask = select_contiguous_window(
                 hydra_importance,
                 fraction=fraction,
@@ -298,8 +338,10 @@ class WindowSHAPComparison:
         return rows
 
     def run_dataset(self, dataset):
+        '''Run HYDRA-vs-WindowSHAP comparison for one dataset'''
         output_path = self.output_dir / f"hydra_windowshap_{dataset}.csv"
 
+        # Skip completed datasets to make long runs resumable.
         if output_path.exists():
             print(f"[SKIP] WindowSHAP comparison already exists for {dataset}")
             return pd.read_csv(output_path)
@@ -318,6 +360,7 @@ class WindowSHAPComparison:
         if not hasattr(model.transform, "get_saliency_map_fast"):
             raise AttributeError("model.transform does not have get_saliency_map_fast")
 
+        # Only explain correctly classified samples.
         preds = model.predict(X_test)
         correct_indices = np.where(preds == y_test)[0]
 
@@ -344,6 +387,7 @@ class WindowSHAPComparison:
         df = pd.DataFrame(rows)
         df.to_csv(output_path, index=False)
 
+        # Release memory before moving to the next dataset.
         del model, X_train, y_train, X_test, y_test
         gc.collect()
         if torch.cuda.is_available():
@@ -352,6 +396,7 @@ class WindowSHAPComparison:
         return df
 
     def run(self):
+        '''Run the comparison across all datasets and write summary CSVs'''
         frames = []
 
         for i, dataset in enumerate(self.datasets, start=1):
@@ -383,6 +428,7 @@ class WindowSHAPComparison:
         }
 
     def overlap_summary(self, df):
+        '''Summarise mask overlap and perturbation strength by masking fraction'''
         return (
             df.groupby("fraction", as_index=False)
             .agg(
@@ -402,6 +448,7 @@ class WindowSHAPComparison:
         )
 
     def timing_summary(self, df):
+        '''Summarise explanation times once per dataset/sample'''
         timing_per_sample = df.drop_duplicates(["dataset", "sample_idx"]).copy()
 
         return pd.DataFrame({
@@ -432,6 +479,7 @@ class WindowSHAPComparison:
         })
 
     def dataset_summary(self, df):
+        '''Summarise WindowSHAP-vs-HYDRA differences per dataset and fraction'''
         dataset_level = (
             df.groupby(["dataset", "fraction"], as_index=False)
             .agg(
@@ -457,6 +505,7 @@ class WindowSHAPComparison:
         return dataset_level
 
     def paired_tests(self, df):
+        '''Run paired tests to check whether WindowSHAP is more disruptive'''
         rows = []
 
         for fraction, group in df.groupby("fraction"):
@@ -486,6 +535,7 @@ class WindowSHAPComparison:
         return pd.DataFrame(rows)
 
     def cluster_level_analysis(self, cluster_csv_path):
+        '''Attach cluster labels and run cluster-level WindowSHAP diagnostics'''
         samples_path = self.output_dir / "hydra_windowshap_samples.csv"
         if not samples_path.exists():
             raise FileNotFoundError(f"Missing WindowSHAP samples file: {samples_path}")
@@ -502,6 +552,7 @@ class WindowSHAPComparison:
         if "cluster_name" not in out.columns:
             out["cluster_name"] = out["cluster"].map(CLUSTER_NAMES)
 
+        # Differences are positive when WindowSHAP masking is more disruptive.
         out["shap_minus_hydra_score_drop"] = out["shap_score_drop"] - out["hydra_score_drop"]
         out["shap_minus_hydra_flip"] = out["shap_flipped"] - out["hydra_flipped"]
 
@@ -541,6 +592,7 @@ class WindowSHAPComparison:
         }
 
     def _kruskal_cluster_tests(self, df):
+        '''Test whether WindowSHAP/HYDRA differences vary across clusters'''
         rows = []
 
         for value_col in [
@@ -573,6 +625,7 @@ class WindowSHAPComparison:
         return pd.DataFrame(rows)
 
     def _within_cluster_tests(self, df):
+        '''Run paired WindowSHAP-vs-HYDRA tests separately within each cluster'''
         rows = []
 
         for (cluster, cluster_name, fraction), group in df.groupby(["cluster", "cluster_name", "fraction"]):

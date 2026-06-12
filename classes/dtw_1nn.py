@@ -4,7 +4,7 @@ from sklearn.metrics import classification_report, confusion_matrix, accuracy_sc
 
 
 class DTWKNNModel:
-    """1-Nearest Neighbour classifier using Dynamic Time Warping distance."""
+    '''1-Nearest Neighbour classifier using Dynamic Time Warping distance'''
 
     def __init__(self):
         self.x_train = None

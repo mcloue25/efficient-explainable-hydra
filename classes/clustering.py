@@ -1,5 +1,3 @@
-"""Signal-morphology clustering for UCR datasets."""
-
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
@@ -17,26 +15,29 @@ from sklearn.metrics import (
 )
 from sklearn.preprocessing import StandardScaler
 
-
 from sklearn.metrics import (
     adjusted_rand_score,
     homogeneity_completeness_v_measure,
     normalized_mutual_info_score,
 )
 
-
 from utils.data_utils import load_dataset
 
 
 def clean_name(value):
+    ''' Normalise dataset/type names for robust matching
+    '''
     return str(value).strip().lower().replace("_", "").replace("-", "").replace(" ", "")
 
 
 def cluster_purity(y_true, y_cluster):
+    ''' Compute cluster purity against an external label assignment
+    '''
     table = pd.crosstab(y_cluster, y_true)
     return table.max(axis=1).sum() / table.values.sum()
 
 
+# Human-readable labels used in plots and report tables.
 CLUSTER_NAMES = {
     0: "High-frequency / high-curvature",
     1: "Smooth / low-complexity",
@@ -44,6 +45,8 @@ CLUSTER_NAMES = {
     3: "Spiky / multi-class",
 }
 
+
+# Full feature set used for clustering.
 FEATURE_COLS = [
     "log_series_length",
     "log_n_instances",
@@ -63,6 +66,8 @@ FEATURE_COLS = [
     "normalized_centroid_separation",
 ]
 
+
+# Smaller feature sets used for reporting and profiling.
 REPORT_FEATURE_COLS = [
     "mean_abs_diff",
     "mean_abs_second_diff",
@@ -85,6 +90,8 @@ PROFILE_FEATURE_COLS = [
 
 
 def z_norm(x, eps=1e-8):
+    ''' Z-normalise a single time series
+    '''
     x = np.asarray(x, dtype=np.float32).squeeze()
     mean = float(np.mean(x))
     std = float(np.std(x))
@@ -92,6 +99,8 @@ def z_norm(x, eps=1e-8):
 
 
 def spectral_entropy(x):
+    ''' Measure how spread out the frequency-domain energy is
+    '''
     x = z_norm(x)
     power = np.abs(np.fft.rfft(x)) ** 2
     p = power / (power.sum() + 1e-12)
@@ -99,6 +108,8 @@ def spectral_entropy(x):
 
 
 def spectral_centroid(x):
+    ''' Compute the frequency-domain centre of mass
+    '''
     x = z_norm(x)
     power = np.abs(np.fft.rfft(x)) ** 2
     freqs = np.fft.rfftfreq(len(x))
@@ -106,6 +117,8 @@ def spectral_centroid(x):
 
 
 def low_freq_energy_ratio(x, cutoff=0.1):
+    '''Measure the proportion of energy in low frequencies
+    '''
     x = z_norm(x)
     power = np.abs(np.fft.rfft(x)) ** 2
     freqs = np.fft.rfftfreq(len(x))
@@ -113,10 +126,14 @@ def low_freq_energy_ratio(x, cutoff=0.1):
 
 
 def spike_ratio(x, thresh=2.5):
+    '''Fraction of points with unusually large z-normalised magnitude
+    '''
     return float(np.mean(np.abs(z_norm(x)) > thresh))
 
 
 def zero_crossing_rate(x):
+    '''Measure how often the signal changes sign
+    '''
     x = z_norm(x)
 
     if len(x) < 2:
@@ -127,6 +144,8 @@ def zero_crossing_rate(x):
 
 
 def autocorr_lag(x, lag):
+    ''' Autocorrelation at a fixed lag
+    '''
     x = z_norm(x)
 
     if len(x) <= lag:
@@ -137,6 +156,8 @@ def autocorr_lag(x, lag):
 
 
 def series_features(x):
+    '''Extract morphology features from a single time series
+    '''
     x = z_norm(x)
     d1 = np.diff(x)
     d2 = np.diff(x, n=2)
@@ -162,21 +183,20 @@ def series_features(x):
 
 
 def class_centroid_distance(X, y):
+    '''Average pairwise distance between class centroids
+    '''
     centroids = [X[y == c].mean(axis=0) for c in np.unique(y)]
 
     if len(centroids) < 2:
         return 0.0
 
-    distances = [
-        np.linalg.norm(centroids[i] - centroids[j])
-        for i in range(len(centroids))
-        for j in range(i + 1, len(centroids))
-    ]
-
+    distances = [np.linalg.norm(centroids[i] - centroids[j]) for i in range(len(centroids)) for j in range(i + 1, len(centroids))]
     return float(np.mean(distances))
 
 
 def normalized_centroid_separation(X, y):
+    '''Class-separation score normalised by within-class spread
+    '''
     classes = np.unique(y)
 
     if len(classes) < 2:
@@ -193,11 +213,7 @@ def normalized_centroid_separation(X, y):
         if len(Xc) > 1:
             within_spreads.append(np.mean(np.linalg.norm(Xc - centroid, axis=1)))
 
-    between_distances = [
-        np.linalg.norm(centroids[i] - centroids[j])
-        for i in range(len(centroids))
-        for j in range(i + 1, len(centroids))
-    ]
+    between_distances = [np.linalg.norm(centroids[i] - centroids[j]) for i in range(len(centroids)) for j in range(i + 1, len(centroids))]
 
     mean_between = np.mean(between_distances) if between_distances else 0.0
     mean_within = np.mean(within_spreads) if within_spreads else 0.0
@@ -207,6 +223,8 @@ def normalized_centroid_separation(X, y):
 
 @dataclass
 class SignalMorphologyClusterer:
+    '''Cluster UCR datasets using global signal-morphology features
+    '''
     datasets: Sequence[str]
     output_dir: Path | str = Path("outputs/clustering")
     n_clusters: int = 4
@@ -214,7 +232,10 @@ class SignalMorphologyClusterer:
     feature_cols: Sequence[str] = field(default_factory=lambda: FEATURE_COLS)
     cluster_names: dict[int, str] = field(default_factory=lambda: CLUSTER_NAMES.copy())
 
+
     def __post_init__(self):
+        '''Prepare output folders and reusable preprocessing objects
+        '''
         self.output_dir = Path(self.output_dir)
         self.csv_output_path = self.output_dir / "csv"
         self.img_output_path = self.output_dir / "imgs"
@@ -229,12 +250,17 @@ class SignalMorphologyClusterer:
         self.feature_matrix = None
         self.clustered_df = None
 
+
+
     def dataset_feature_row(self, dataset):
+        '''Build one feature row for a single UCR dataset
+        '''
         X_train, y_train, X_test, y_test, _ = load_dataset(dataset)
 
         X = np.concatenate([X_train, X_test], axis=0)
         y = np.concatenate([y_train, y_test], axis=0)
 
+        # Average per-series morphology features across the dataset.
         per_series = pd.DataFrame([series_features(x) for x in X])
 
         row = {
@@ -248,14 +274,14 @@ class SignalMorphologyClusterer:
             "normalized_centroid_separation": normalized_centroid_separation(X, y),
         }
 
-        row.update({
-            k: float(v)
-            for k, v in per_series.mean(numeric_only=True).to_dict().items()
-        })
-
+        row.update({k: float(v) for k, v in per_series.mean(numeric_only=True).to_dict().items()})
         return row
 
+
+
     def build_feature_table(self):
+        '''Extract morphology features for all requested datasets
+        '''
         rows = []
 
         for i, dataset in enumerate(self.datasets, start=1):
@@ -265,17 +291,16 @@ class SignalMorphologyClusterer:
         self.dataset_features = pd.DataFrame(rows)
         return self.dataset_features
 
+
+
     def fit(self):
+        '''Scale features, cluster datasets, and compute PCA coordinates
+        '''
         self.build_feature_table()
+        self.feature_matrix = self.scaler.fit_transform(self.dataset_features[list(self.feature_cols)])
+        labels = AgglomerativeClustering(n_clusters=self.n_clusters).fit_predict(self.feature_matrix)
 
-        self.feature_matrix = self.scaler.fit_transform(
-            self.dataset_features[list(self.feature_cols)]
-        )
-
-        labels = AgglomerativeClustering(
-            n_clusters=self.n_clusters
-        ).fit_predict(self.feature_matrix)
-
+        # PCA is used only for visualisation/diagnostic outputs.
         pca_coords = self.pca.fit_transform(self.feature_matrix)
 
         self.clustered_df = self.dataset_features.copy()
@@ -283,26 +308,24 @@ class SignalMorphologyClusterer:
         self.clustered_df["cluster_name"] = self.clustered_df["cluster"].map(self.cluster_names)
         self.clustered_df["pca1"] = pca_coords[:, 0]
         self.clustered_df["pca2"] = pca_coords[:, 1]
-
         return self.clustered_df
 
+
+
     def save(self):
-        self.dataset_features.to_csv(
-            self.csv_output_path / "ucr_dataset_feature_table.csv",
-            index=False,
-        )
+        '''Write feature and cluster assignment CSV files
+        '''
+        self.dataset_features.to_csv(self.csv_output_path / "ucr_dataset_feature_table.csv", index=False)
+        self.clustered_df.to_csv(self.csv_output_path / f"ucr_dataset_clusters_k{self.n_clusters}.csv", index=False)
 
-        self.clustered_df.to_csv(
-            self.csv_output_path / f"ucr_dataset_clusters_k{self.n_clusters}.csv",
-            index=False,
-        )
+        # Stable filename used by downstream report-generation scripts.
+        self.clustered_df.to_csv(self.csv_output_path / "ucr_dataset_clusters_final.csv", index=False)
 
-        self.clustered_df.to_csv(
-            self.csv_output_path / "ucr_dataset_clusters_final.csv",
-            index=False,
-        )
+
 
     def run(self):
+        '''Run the full clustering pipeline
+        '''
         print(f"Writing outputs to {self.output_dir.resolve()}")
 
         self.fit()
