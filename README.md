@@ -6,6 +6,42 @@ The recommended setup is to run each dataset/model pair as an independent proces
 
 ---
 
+## Environment Setup
+
+This project uses **Python 3.13+**. You can set up the environment using standard Python `venv` or `uv` (recommended). The primary dependencies are `torch`, `scikit-learn`, `numpy`, and `aeon` (for UCR dataset loading).
+
+### Option 1: Using standard Python `venv`
+If you prefer standard Python tools, a `requirements.txt` file is provided. Set up your virtual environment and install the dependencies:
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Option 2: Using `uv` (Recommended)
+If you have [uv](https://github.com/astral-sh/uv) installed, the project includes a `pyproject.toml` file. Simply run:
+```bash
+uv sync
+source .venv/bin/activate
+```
+
+---
+
+## Interactive Example & Dynamic Batching
+
+If you are looking for an interactive demonstration, the root directory contains an example notebook:
+* `./hydra_coffee_example.ipynb`
+
+This notebook illustrates the updated HYDRA model, saliency map generation on the Coffee dataset, and the sequence-length-aware **Dynamic Batching** strategy. 
+
+## Hardware Optimisation Results
+
+The empirical results of the target sequence length optimisation and latency model comparisons across **M1, M2, and M4 Mac** systems (evaluated over 5 seeds) can all be found in the following directory:
+* `./results/`
+
+---
+
+
 ## 1. Enter the project in WSL
 
 From WSL:
